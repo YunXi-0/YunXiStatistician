@@ -12,7 +12,7 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 const UUID = 'YunXiStatistician';
-const APP_VERSION = '1.4.4.4';
+const APP_VERSION = '1.4.5';
 const LEADERBOARD_API_URL = 'https://stats.ahuai.top';
 const RELEASE_API_URL = 'https://api.github.com/repos/YunXi-0/YunXiStatistician/releases/latest';
 const UPDATE_ASSET_NAME = 'YunXiStatistician-Linux-GNOME.zip';

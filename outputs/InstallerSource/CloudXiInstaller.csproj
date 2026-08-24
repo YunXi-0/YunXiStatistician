@@ -8,7 +8,7 @@
     <Nullable>enable</Nullable>
     <AssemblyTitle>云曦PC统计 安装支持</AssemblyTitle>
     <Product>云曦PC统计</Product>
-    <Version>1.4.4.4</Version>
+    <Version>1.4.5</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
     <AssemblyName>CloudXiInstaller</AssemblyName>

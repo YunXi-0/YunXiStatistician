@@ -278,9 +278,20 @@ try {
     if ($installResult.success -ne $true) {
         throw "双用途单文件静默安装失败：$($installResult.error)"
     }
+    $parsedTagVersion = [version]$tagVersion
+    $expectedFileVersion = if ($parsedTagVersion.Revision -lt 0) {
+        [version]::new(
+            $parsedTagVersion.Major,
+            $parsedTagVersion.Minor,
+            $parsedTagVersion.Build,
+            0)
+    }
+    else {
+        $parsedTagVersion
+    }
     foreach ($versionedFile in @($windowsAsset, $installedApplication)) {
         $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($versionedFile)
-        if ($versionInfo.FileVersion -ne $tagVersion -or
+        if ([version]$versionInfo.FileVersion -ne $expectedFileVersion -or
             $versionInfo.ProductVersion -ne $tagVersion) {
             throw "Windows 成品版本信息不正确：$versionedFile，FileVersion=$($versionInfo.FileVersion)，ProductVersion=$($versionInfo.ProductVersion)"
         }
