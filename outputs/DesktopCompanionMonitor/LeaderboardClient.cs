@@ -14,6 +14,7 @@ internal sealed record LeaderboardBoardsResult(
 internal sealed class LeaderboardClient
 {
     private const string KvdbBaseUrl = "https://kvdb.io/A2vqsiB5juK3mX6H9urPed";
+    private const string LeaderboardApiBaseUrl = "https://stats.ahuai.top";
     private const string RegistryKey = "registry";
     private const string UserKeyPrefix = "user_";
     private const string CompatibilityTotalsKey = "_totals";
@@ -104,10 +105,18 @@ internal sealed class LeaderboardClient
         using CancellationTokenSource timeout = new(LeaderboardReadTimeout);
         try
         {
-            LeaderboardData data = await GetAsync(timeout.Token);
-            Dictionary<string, IReadOnlyList<LeaderboardEntry>> boards =
-                await BuildBoardsAsync(data, date, includeLuck, includeCollections, timeout.Token);
-            _cache = data;
+            using HttpResponseMessage response = await Http.GetAsync(
+                $"{LeaderboardApiBaseUrl}/api/leaderboard?date={date:yyyy-MM-dd}", timeout.Token);
+            response.EnsureSuccessStatusCode();
+            string json = await response.Content.ReadAsStringAsync(timeout.Token);
+            ApiLeaderboardResponse api = JsonSerializer.Deserialize<ApiLeaderboardResponse>(json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                ?? throw new JsonException("排行榜接口返回为空。");
+            Dictionary<string, IReadOnlyList<LeaderboardEntry>> boards = GetMetrics(includeLuck, includeCollections)
+                .ToDictionary(metric => metric, metric => api.Boards.TryGetValue(metric, out List<ApiBoardEntry>? entries)
+                    ? (IReadOnlyList<LeaderboardEntry>)entries
+                        .Select(entry => new LeaderboardEntry(entry.Uuid, entry.Name, entry.Value)).ToList()
+                    : []);
             SaveBoardsCache(date, boards);
             return new LeaderboardBoardsResult(boards, false, _boardsCache?.CachedAtUtc);
         }
@@ -136,22 +145,17 @@ internal sealed class LeaderboardClient
         await _lock.WaitAsync();
         try
         {
-            string userKey = $"{UserKeyPrefix}{uuid}";
-            UserDataBlob? userData;
-            try
+            var payload = new
             {
-                userData = await GetUserDataAsync(userKey);
-            }
-            catch (Exception ex)
-            {
-                AppLog.Info($"排行榜上传前读取用户数据失败（UUID={uuid}）：{ex.Message}");
-                return false;
-            }
-
-            userData ??= new UserDataBlob { Uuid = uuid, Name = displayName };
-            UpdateUserData(userData, uuid, displayName, date, values);
-
-            return await PutUserDataAsync(userKey, userData);
+                uuid,
+                name = displayName,
+                date = date.ToString("yyyy-MM-dd"),
+                values,
+            };
+            using HttpResponseMessage response = await Http.PostAsync(
+                $"{LeaderboardApiBaseUrl}/api/statistics",
+                new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"));
+            return response.IsSuccessStatusCode;
         }
         catch (Exception ex)
         {
@@ -917,6 +921,18 @@ internal sealed class LeaderboardClient
 
         [JsonPropertyName("installer_sha256")]
         public string InstallerSha256 { get; set; } = "";
+    }
+
+    private sealed class ApiLeaderboardResponse
+    {
+        public Dictionary<string, List<ApiBoardEntry>> Boards { get; set; } = [];
+    }
+
+    private sealed class ApiBoardEntry
+    {
+        public string Uuid { get; set; } = "";
+        public string Name { get; set; } = "";
+        public double Value { get; set; }
     }
 
     private sealed class UserDataBlob
