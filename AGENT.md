@@ -42,6 +42,7 @@
 
 ## 跨端同步
 
+- Windows 与 Linux 的共有功能必须保持实现同步；修改共有功能、数据协议或服务端接口时，必须同时检查并更新另一端，不能只切换单个平台。
 - 每次发布必须同时更新 Windows `Changelog.cs` 和 Linux `changelog.txt`，两者的更新日志正文必须逐字一致。
 - Windows 与 Linux 更新日志的首个版本必须与发布标签一致；`scripts/check-release.ps1` 会检查版本和完整正文，任一项不同都禁止发布。
 - 两端“关于”中的软件名称、版本、更新日期、开发人员和 Git 地址必须一致。Linux 版本来自 `APP_VERSION`，更新日期来自 `changelog.txt`，不要再写死重复值。

@@ -13,10 +13,10 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 const UUID = 'YunXiStatistician';
 const APP_VERSION = '1.4.4.4';
-const LEADERBOARD_URL = 'https://kvdb.io/A2vqsiB5juK3mX6H9urPed';
+const KVDB_URL = 'https://kvdb.io/A2vqsiB5juK3mX6H9urPed';
+const LEADERBOARD_API_URL = 'https://stats.ahuai.top';
 const RELEASE_API_URL = 'https://api.github.com/repos/YunXi-0/YunXiStatistician/releases/latest';
 const UPDATE_ASSET_NAME = 'YunXiStatistician-Linux-GNOME.zip';
-const MAX_CONCURRENT_USER_FETCHES = 4;
 const UPDATE_MIRRORS = [
     'https://mirror.ahuai.top/',
     'https://gh-proxy.com/',
@@ -145,6 +145,7 @@ export default class YunXiExtension extends Extension {
         this._leaderboardMetric = 'active';
         this._leaderboardPeriod = 1;
         this._leaderboardEntries = [];
+        this._leaderboardBoards = {};
         this._leaderboardStatus = '全部排行榜已同步';
         this._settingsStatus = '当前已是最新版本';
         this._httpSession = new Soup.Session({timeout: 15});
@@ -746,11 +747,11 @@ export default class YunXiExtension extends Extension {
             const registry = await this._getKvdb('registry') ?? {uuid_counter: 0, uuid_map: {}};
             const uuid = await this._ensureDeviceUuid(registry);
             await this._submitLeaderboard(uuid);
-            const uuids = [...new Set(Object.values(registry.uuid_map ?? {}))];
-            if (!uuids.includes(uuid))
-                uuids.push(uuid);
-            const records = await this._loadLeaderboardRecords(uuids);
-            this._leaderboardRecords = records.filter(([, data]) => data).map(([id, data]) => ({id, data}));
+            const {status, text} = await this._sendHttp(
+                'GET', `${LEADERBOARD_API_URL}/api/leaderboard?date=${dayKey()}`);
+            if (status < 200 || status >= 300)
+                throw new Error(`HTTP ${status}`);
+            this._leaderboardBoards = JSON.parse(text).boards ?? {};
             this._buildLeaderboardEntries();
             this._leaderboardStatus = '排行榜已同步';
         } catch (error) {
@@ -760,25 +761,6 @@ export default class YunXiExtension extends Extension {
             if (this._page === 'leaderboard')
                 this._render();
         }
-    }
-
-    async _loadLeaderboardRecords(uuids) {
-        const records = new Array(uuids.length);
-        let nextIndex = 0;
-        const worker = async () => {
-            while (nextIndex < uuids.length) {
-                const index = nextIndex++;
-                const id = uuids[index];
-                try {
-                    records[index] = [id, await this._getKvdb(`user_${id}`)];
-                } catch (_) {
-                    records[index] = [id, null];
-                }
-            }
-        };
-        const workerCount = Math.min(MAX_CONCURRENT_USER_FETCHES, uuids.length);
-        await Promise.all(Array.from({length: workerCount}, () => worker()));
-        return records;
     }
 
     async _ensureDeviceUuid(registry) {
@@ -807,16 +789,7 @@ export default class YunXiExtension extends Extension {
     }
 
     async _submitLeaderboard(uuid) {
-        const key = `user_${uuid}`;
         const config = this._store.data.config;
-        const current = await this._getKvdb(key) ?? {
-            schema_version: 2, uuid, name: config.name, totals: {}, entries: {},
-        };
-        current.schema_version = 2;
-        current.uuid = uuid;
-        current.name = config.name;
-        current.totals ??= {};
-        current.entries ??= {};
         const keyToday = dayKey();
         const day = this._store.day();
         const values = {
@@ -828,54 +801,22 @@ export default class YunXiExtension extends Extension {
         };
         if (config.luckDate === keyToday) values.luck = config.luck;
         values.collections = config.collections;
-        const oldDay = current.entries[keyToday] ?? {};
-        for (const metric of ['active', 'mouse_total', 'mouse_left', 'mouse_right', 'keyboard']) {
-            const oldValue = Number(oldDay[metric]?.[0]?.value ?? 0);
-            current.totals[metric] = Number(current.totals[metric] ?? 0) + values[metric] - oldValue;
-        }
-        current.entries[keyToday] = oldDay;
-        for (const [metric, value] of Object.entries(values))
-            oldDay[metric] = [{uuid, name: config.name, value}];
-        const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 29);
-        for (const keyDate of Object.keys(current.entries)) {
-            if (/^\d{4}-\d{2}-\d{2}$/.test(keyDate) && new Date(`${keyDate}T00:00:00`) < cutoff)
-                delete current.entries[keyDate];
-        }
-        await this._putKvdb(key, current);
+        const body = JSON.stringify({uuid, name: config.name, date: keyToday, values});
+        const {status} = await this._sendHttp(
+            'POST', `${LEADERBOARD_API_URL}/api/statistics`, body, 'application/json; charset=utf-8');
+        if (status < 200 || status >= 300)
+            throw new Error(`HTTP ${status}`);
     }
 
     _buildLeaderboardEntries() {
         const metric = this._leaderboardMetric;
         const period = this._leaderboardPeriod;
-        const today = dayKey();
-        this._leaderboardEntries = (this._leaderboardRecords ?? []).map(({id, data}) => {
-            let value = null;
-            if (metric === 'collections') {
-                const dates = Object.keys(data.entries ?? {}).filter(key => key <= today).sort().reverse();
-                for (const date of dates) {
-                    if (data.entries[date]?.collections?.length) {
-                        value = Number(data.entries[date].collections[0].value); break;
-                    }
-                }
-            } else if (metric === 'luck') {
-                value = Number(data.entries?.[today]?.luck?.[0]?.value ?? NaN);
-            } else if (period === 0 && data.schema_version >= 2 && metric in (data.totals ?? {})) {
-                value = Number(data.totals[metric]);
-            } else {
-                const days = period || 100000;
-                value = 0;
-                let found = false;
-                for (let offset = 0; offset < days; offset++) {
-                    const date = new Date(); date.setDate(date.getDate() - offset);
-                    const item = data.entries?.[dayKey(date)]?.[metric]?.[0];
-                    if (item) { value += Number(item.value ?? 0); found = true; }
-                    if (period === 0 && offset > 3650) break;
-                }
-                if (!found) value = null;
-            }
-            return {uuid: id, name: data.name || id, value};
-        }).filter(entry => Number.isFinite(entry.value))
-            .sort((a, b) => b.value - a.value);
+        const board = metric === 'luck' || metric === 'collections'
+            ? metric
+            : period === 0 ? `${metric}_total` : period === 1 ? metric : `${metric}${period}`;
+        this._leaderboardEntries = (this._leaderboardBoards?.[board] ?? [])
+            .map(entry => ({uuid: entry.uuid, name: entry.name || entry.uuid, value: Number(entry.value)}))
+            .filter(entry => Number.isFinite(entry.value));
     }
 
     _formatLeaderboardValue(value) {
@@ -883,7 +824,7 @@ export default class YunXiExtension extends Extension {
     }
 
     async _getKvdb(key) {
-        const {status, text} = await this._sendHttp('GET', `${LEADERBOARD_URL}/${key}`);
+        const {status, text} = await this._sendHttp('GET', `${KVDB_URL}/${key}`);
         if (status === 404)
             return null;
         if (status < 200 || status >= 300)
@@ -896,18 +837,18 @@ export default class YunXiExtension extends Extension {
 
     async _putKvdb(key, value) {
         const body = JSON.stringify(JSON.stringify(value));
-        const {status} = await this._sendHttp('PUT', `${LEADERBOARD_URL}/${key}`, body);
+        const {status} = await this._sendHttp('PUT', `${KVDB_URL}/${key}`, body);
         if (status < 200 || status >= 300)
             throw new Error(`HTTP ${status}`);
     }
 
-    _sendHttp(method, uri, body = null) {
+    _sendHttp(method, uri, body = null, contentType = 'text/plain; charset=utf-8') {
         return new Promise((resolve, reject) => {
             try {
                 const message = Soup.Message.new(method, uri);
                 if (body !== null) {
                     const bytes = new GLib.Bytes(new TextEncoder().encode(body));
-                    message.set_request_body_from_bytes('text/plain; charset=utf-8', bytes);
+                    message.set_request_body_from_bytes(contentType, bytes);
                 }
                 this._httpSession.send_and_read_async(message, GLib.PRIORITY_DEFAULT, null, (session, result) => {
                     try {
