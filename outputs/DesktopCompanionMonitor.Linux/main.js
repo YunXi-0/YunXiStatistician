@@ -13,7 +13,6 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 const UUID = 'YunXiStatistician';
 const APP_VERSION = '1.4.4.4';
-const KVDB_URL = 'https://kvdb.io/A2vqsiB5juK3mX6H9urPed';
 const LEADERBOARD_API_URL = 'https://stats.ahuai.top';
 const RELEASE_API_URL = 'https://api.github.com/repos/YunXi-0/YunXiStatistician/releases/latest';
 const UPDATE_ASSET_NAME = 'YunXiStatistician-Linux-GNOME.zip';
@@ -744,8 +743,7 @@ export default class YunXiExtension extends Extension {
         this._leaderboardStatus = '正在同步排行榜...';
         this._render();
         try {
-            const registry = await this._getKvdb('registry') ?? {uuid_counter: 0, uuid_map: {}};
-            const uuid = await this._ensureDeviceUuid(registry);
+            const uuid = await this._ensureDeviceUuid();
             await this._submitLeaderboard(uuid);
             const {status, text} = await this._sendHttp(
                 'GET', `${LEADERBOARD_API_URL}/api/leaderboard?date=${dayKey()}`);
@@ -763,7 +761,7 @@ export default class YunXiExtension extends Extension {
         }
     }
 
-    async _ensureDeviceUuid(registry) {
+    async _ensureDeviceUuid() {
         const config = this._store.data.config;
         if (config.deviceUuid)
             return config.deviceUuid;
@@ -774,15 +772,14 @@ export default class YunXiExtension extends Extension {
         } catch (_) {}
         const fingerprint = GLib.compute_checksum_for_string(
             GLib.ChecksumType.SHA256, `CloudXiPcStatistician:v1:${machineId}`, -1);
-        registry.uuid_map ??= {};
-        let uuid = registry.uuid_map[fingerprint];
-        if (!uuid) {
-            const counter = Number(registry.uuid_counter ?? 0);
-            uuid = String(counter).padStart(3, '0');
-            registry.uuid_map[fingerprint] = uuid;
-            registry.uuid_counter = counter + 1;
-            await this._putKvdb('registry', registry);
-        }
+        const body = JSON.stringify({fingerprint});
+        const {status, text} = await this._sendHttp(
+            'POST', `${LEADERBOARD_API_URL}/api/device`, body, 'application/json; charset=utf-8');
+        if (status < 200 || status >= 300)
+            throw new Error(`HTTP ${status}`);
+        const uuid = JSON.parse(text).uuid;
+        if (!uuid)
+            throw new Error('设备接口未返回 UUID');
         config.deviceUuid = uuid;
         this._store.save();
         return uuid;
@@ -821,25 +818,6 @@ export default class YunXiExtension extends Extension {
 
     _formatLeaderboardValue(value) {
         return this._leaderboardMetric === 'active' ? this._formatLeaderboardTime(value) : this._number(value);
-    }
-
-    async _getKvdb(key) {
-        const {status, text} = await this._sendHttp('GET', `${KVDB_URL}/${key}`);
-        if (status === 404)
-            return null;
-        if (status < 200 || status >= 300)
-            throw new Error(`HTTP ${status}`);
-        let value = text;
-        for (let layer = 0; layer < 4 && typeof value === 'string'; layer++)
-            value = JSON.parse(value);
-        return value;
-    }
-
-    async _putKvdb(key, value) {
-        const body = JSON.stringify(JSON.stringify(value));
-        const {status} = await this._sendHttp('PUT', `${KVDB_URL}/${key}`, body);
-        if (status < 200 || status >= 300)
-            throw new Error(`HTTP ${status}`);
     }
 
     _sendHttp(method, uri, body = null, contentType = 'text/plain; charset=utf-8') {
