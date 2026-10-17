@@ -61,6 +61,23 @@ internal sealed class PowerEventHistory
             }
         }
 
+        DateTimeOffset? latestResume = power
+            .Where(e => (e.Id is 107 or 507) && e.Time <= now)
+            .Select(e => (DateTimeOffset?)e.Time)
+            .OrderByDescending(t => t)
+            .FirstOrDefault();
+        if (latestResume is { } resume)
+        {
+            for (int i = 0; i < powered.Count; i++)
+            {
+                Interval interval = powered[i];
+                if (interval.Start < resume && interval.End >= resume)
+                {
+                    powered[i] = interval with { Start = resume };
+                }
+            }
+        }
+
         return new PowerEventHistory(Merge(powered), sleep);
     }
 

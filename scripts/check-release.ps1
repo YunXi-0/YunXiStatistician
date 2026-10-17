@@ -30,10 +30,7 @@ $sourceRoot = Join-Path $tempRoot 'source'
 $dotnetRoot = Join-Path $tempRoot 'dotnet'
 $dotnetHome = Join-Path $tempRoot 'dotnet-home'
 $nugetPackages = Join-Path $tempRoot 'nuget-packages'
-$linuxStage = Join-Path $tempRoot 'linux-extension'
-$linuxOutput = Join-Path $tempRoot 'linux-release'
 $windowsOutput = Join-Path $tempRoot 'windows-release'
-$linuxFiles = @('changelog.txt', 'extension.js', 'INSTALL.txt', 'main.js', 'metadata.json', 'stylesheet.css')
 $tagVersion = $Tag.Substring(1)
 
 function Invoke-Checked {
@@ -139,7 +136,7 @@ try {
     $env:DOTNET_NOLOGO = '1'
     $env:NUGET_PACKAGES = $nugetPackages
     New-Item -ItemType Directory -Path $sourceRoot, $dotnetRoot, $dotnetHome,
-        $nugetPackages, $linuxStage, $linuxOutput, $windowsOutput | Out-Null
+        $nugetPackages, $windowsOutput | Out-Null
 
     Write-Host '检查 GitHub 最新发布版本...'
     $latestReleaseVersion = Get-LatestReleaseVersion
@@ -162,42 +159,14 @@ try {
 
     $appProjectPath = Join-Path $sourceRoot 'outputs\DesktopCompanionMonitor\PcCompanionMonitor.csproj'
     $installerProjectPath = Join-Path $sourceRoot 'outputs\InstallerSource\CloudXiInstaller.csproj'
-    $linuxSource = Join-Path $sourceRoot 'outputs\DesktopCompanionMonitor.Linux'
-    $linuxMainPath = Join-Path $linuxSource 'main.js'
-    $linuxMetadataPath = Join-Path $linuxSource 'metadata.json'
     $windowsChangelogPath = Join-Path $sourceRoot 'outputs\DesktopCompanionMonitor\Changelog.cs'
-    $linuxChangelogPath = Join-Path $linuxSource 'changelog.txt'
     Write-Host '校对版本和更新日志...'
     [xml]$appProject = Get-Content -Raw -LiteralPath $appProjectPath
     [xml]$installerProject = Get-Content -Raw -LiteralPath $installerProjectPath
     $appVersion = $appProject.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
     $installerVersion = $installerProject.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
-    $linuxVersionMatch = [regex]::Match(
-        (Get-Content -Raw -Encoding UTF8 -LiteralPath $linuxMainPath),
-        "(?m)^const APP_VERSION = '([^']+)';$")
-    if (-not $linuxVersionMatch.Success) {
-        throw '无法读取 Linux APP_VERSION'
-    }
-    $linuxVersion = $linuxVersionMatch.Groups[1].Value
-    try {
-        $linuxMetadata = Get-Content -Raw -Encoding UTF8 -LiteralPath $linuxMetadataPath |
-            ConvertFrom-Json
-    }
-    catch {
-        throw "Linux metadata.json 无法解析：$($_.Exception.Message)"
-    }
-    $metadataVersionName = [string]$linuxMetadata.'version-name'
-    $metadataAuthor = [string]$linuxMetadata.author
-    if (($linuxMetadata.version -isnot [int] -and
-        $linuxMetadata.version -isnot [long]) -or
-        [int64]$linuxMetadata.version -lt 1) {
-        throw 'Linux metadata.json 的 version 必须是正整数'
-    }
-    if ($metadataVersionName -ne $tagVersion -or $metadataAuthor -ne 'YunXi') {
-        throw "Linux metadata.json 不一致：version-name=$metadataVersionName，author=$metadataAuthor"
-    }
-    if ($appVersion -ne $tagVersion -or $installerVersion -ne $tagVersion -or $linuxVersion -ne $tagVersion) {
-        throw "标签版本 $tagVersion 与项目版本不一致：Windows=$appVersion，安装程序=$installerVersion，Linux=$linuxVersion"
+    if ($appVersion -ne $tagVersion -or $installerVersion -ne $tagVersion) {
+        throw "标签版本 $tagVersion 与项目版本不一致：Windows=$appVersion，安装程序=$installerVersion"
     }
 
     $windowsLines = foreach ($line in Get-Content -Encoding UTF8 -LiteralPath $windowsChangelogPath) {
@@ -206,39 +175,9 @@ try {
         }
     }
     $windowsChangelog = ($windowsLines -join "`n").TrimEnd()
-    $linuxChangelog = (Get-Content -Raw -Encoding UTF8 -LiteralPath $linuxChangelogPath).
-        Replace("`r`n", "`n").TrimEnd()
-    if ($windowsChangelog -cne $linuxChangelog) {
-        throw 'Windows Changelog.cs 与 Linux changelog.txt 内容不一致'
-    }
     $changelogMatch = [regex]::Match($windowsChangelog, '(?m)^版本\s+([0-9.]+)（')
     if (-not $changelogMatch.Success -or $changelogMatch.Groups[1].Value -ne $tagVersion) {
         throw "标签版本 $tagVersion 与更新日志版本不一致"
-    }
-
-    Write-Host '检查 Linux 扩展...'
-    foreach ($file in $linuxFiles) {
-        $path = Join-Path $linuxSource $file
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-            throw "Linux 发布文件不存在：$file"
-        }
-        Copy-Item -LiteralPath $path -Destination (Join-Path $linuxStage $file)
-    }
-    Invoke-Checked -FilePath 'node.exe' -Arguments @('--check', (Join-Path $linuxStage 'extension.js'))
-    Invoke-Checked -FilePath 'node.exe' -Arguments @('--check', (Join-Path $linuxStage 'main.js'))
-    $linuxZipPath = Join-Path $linuxOutput 'YunXiStatistician-Linux-GNOME.zip'
-    Compress-Archive -LiteralPath ($linuxFiles | ForEach-Object { Join-Path $linuxStage $_ }) `
-        -DestinationPath $linuxZipPath -CompressionLevel Optimal
-    $archive = [IO.Compression.ZipFile]::OpenRead($linuxZipPath)
-    try {
-        $entries = @($archive.Entries | ForEach-Object FullName | Sort-Object)
-    }
-    finally {
-        $archive.Dispose()
-    }
-    $expectedEntries = @($linuxFiles | Sort-Object)
-    if (($entries -join "`n") -cne ($expectedEntries -join "`n")) {
-        throw "Linux ZIP 文件清单不正确：$($entries -join ', ')"
     }
 
     Write-Host '还原并发布 Windows 双用途单文件...'
@@ -304,7 +243,6 @@ try {
 
     Write-Host "发布预检通过：$Tag"
     Write-Host "Windows：$((Get-Item -LiteralPath $windowsAsset).Length) 字节"
-    Write-Host "Linux：$((Get-Item -LiteralPath $linuxZipPath).Length) 字节"
 }
 finally {
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |

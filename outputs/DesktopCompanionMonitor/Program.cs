@@ -83,13 +83,15 @@ internal static class Program
             return;
         }
 
+        ApplicationConfiguration.Initialize();
         string[] applicationArgs = args.Length > 1 ? args[1..] : [];
         if (InstallerApplication.ShouldRunInstaller(applicationArgs))
         {
-            ApplicationConfiguration.Initialize();
             InstallerApplication.Run(applicationArgs);
             return;
         }
+
+        if (!AdminPrompt.ShowIfNeeded()) return;
 
         using Mutex mutex = new(true, @"Local\PcCompanionMonitor.SingleInstance", out bool createdNew);
         if (!createdNew)
@@ -97,7 +99,6 @@ internal static class Program
             return;
         }
 
-        ApplicationConfiguration.Initialize();
         AppLog.Initialize();
         AppLog.Info("应用启动");
         ActivityStore store = new();
