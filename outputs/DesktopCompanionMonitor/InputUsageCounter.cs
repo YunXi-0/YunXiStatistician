@@ -71,42 +71,15 @@ internal sealed class InputUsageCounter : IDisposable
     private static KeyCategory GetKeyCategory(uint virtualKey)
     {
         KeyCategory category = KeyCategory.None;
-        if (virtualKey is 0x57 or 0x41 or 0x53 or 0x44)
-        {
-            category |= KeyCategory.Wasd;
-        }
-        if (virtualKey is 0x51 or 0x57 or 0x45 or 0x52)
-        {
-            category |= KeyCategory.Qwer;
-        }
-        if (virtualKey is 0x10 or 0xA0 or 0xA1)
-        {
-            category |= KeyCategory.Shift;
-        }
-        if (virtualKey is 0x11 or 0xA2 or 0xA3)
-        {
-            category |= KeyCategory.Ctrl;
-        }
-        if (virtualKey == 0x09)
-        {
-            category |= KeyCategory.Tab;
-        }
-        if (virtualKey == 0x20)
-        {
-            category |= KeyCategory.Space;
-        }
-        if (virtualKey == 0x08)
-        {
-            category |= KeyCategory.Backspace;
-        }
-        if (virtualKey == 0x0D)
-        {
-            category |= KeyCategory.Enter;
-        }
-        if (virtualKey is 0x25 or 0x26 or 0x27 or 0x28)
-        {
-            category |= KeyCategory.Arrow;
-        }
+        if (virtualKey is 0x57 or 0x41 or 0x53 or 0x44) category |= KeyCategory.Wasd;
+        if (virtualKey is 0x51 or 0x57 or 0x45 or 0x52) category |= KeyCategory.Qwer;
+        if (virtualKey is 0x10 or 0xA0 or 0xA1) category |= KeyCategory.Shift;
+        if (virtualKey is 0x11 or 0xA2 or 0xA3) category |= KeyCategory.Ctrl;
+        if (virtualKey == 0x09) category |= KeyCategory.Tab;
+        if (virtualKey == 0x20) category |= KeyCategory.Space;
+        if (virtualKey == 0x08) category |= KeyCategory.Backspace;
+        if (virtualKey == 0x0D) category |= KeyCategory.Enter;
+        if (virtualKey is 0x25 or 0x26 or 0x27 or 0x28) category |= KeyCategory.Arrow;
         return category;
     }
 

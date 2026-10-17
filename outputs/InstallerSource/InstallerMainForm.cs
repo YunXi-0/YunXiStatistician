@@ -102,7 +102,7 @@ internal sealed class InstallerMainForm : Form
 
         Label noteLabel = new()
         {
-            Text = "本组件安装完成后仅会存在一个.exe文件以及两个文件夹",
+            Text = "安装完成后，云曦PC统计需要管理员权限以监听游戏内键鼠；本组件仅会存在一个.exe文件以及两个文件夹",
             Location = new Point(28, 302),
             Size = new Size(508, 20),
             Font = new Font("Microsoft YaHei UI", 8f),

@@ -29,6 +29,7 @@ internal sealed class LockAwareLabel : System.Windows.Forms.Label
 internal sealed class MainForm : Form
 {
     internal enum UiPage { Data, Performance, Stats, Settings, Leaderboard }
+    private const bool LeaderboardUploadEnabled = false;
 
     private readonly MonitorEngine _engine;
     private readonly PerformanceSampler _performance;
@@ -651,7 +652,7 @@ internal sealed class MainForm : Form
         if (_page == UiPage.Data && _view == 3) UpdateMaxValues();
         if (_page == UiPage.Stats && _view == 2) UpdateInputSummary();
         if (_page == UiPage.Performance) UpdatePerformance(_performance.Sample());
-        if (!_leaderboardBusy &&
+        if (LeaderboardUploadEnabled && !_leaderboardBusy &&
             _lastLeaderboardUploadUtc != default &&
             DateTimeOffset.UtcNow - _lastLeaderboardUploadUtc > TimeSpan.FromSeconds(60))
         {
@@ -971,6 +972,7 @@ internal sealed class MainForm : Form
         bool uploadCurrentData = true,
         bool refreshBoards = true)
     {
+        uploadCurrentData &= LeaderboardUploadEnabled;
         if (_leaderboardBusy)
         {
             AppLog.Info("排行榜同步已在进行，跳过本次请求");
