@@ -2,11 +2,17 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-08-24 16:09";
+    public static string CurrentReleaseDate => "2026-10-17 18:58";
     public static string Text => string.Join(
         Environment.NewLine,
         [
-            "云曦PC统计 更新日志",
+"\u4e91\u66e6PC\u7edf\u8ba1 \u66f4\u65b0\u65e5\u5fd7",
+"\u7248\u672c 1.4.6\uff08261017 18:58\uff09",
+            "",
+"- \u4fee\u590d Windows \u7535\u6e90\u7edf\u8ba1\u5728\u6062\u590d\u540e\u91cd\u590d\u8ba1\u7b97\u7684\u95ee\u9898",
+"- \u589e\u52a0 Windows \u7ba1\u7406\u5458\u6743\u9650\u63d0\u793a\uff0c\u6539\u5584\u6e38\u620f\u5185\u952e\u9f20\u7edf\u8ba1\u517c\u5bb9\u6027",
+"- \u79fb\u9664\u6d4b\u8bd5\u7528\u7684\u6392\u884c\u699c\u4e0a\u4f20\u5f00\u5173",
+            "",
 "版本 1.4.5（260824 16:09）",
             "",
 "- 排行榜迁移至自建服务，解决长期数据增长导致的读取失败",
