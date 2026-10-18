@@ -2,12 +2,12 @@
 
 internal static class Changelog
 {
-    public static string CurrentReleaseDate => "2026-10-18 22:51";
+    public static string CurrentReleaseDate => "2026-10-18 22:52";
     public static string Text => string.Join(
         Environment.NewLine,
         [
             "云曦PC统计 更新日志",
-"\u7248\u672c 1.4.8\uff08261018 22:51\uff09",
+"\u7248\u672c 1.4.8\uff08261018 22:52\uff09",
             "",
 "- \u4fee\u590d\u8bb0\u4f4f\u63d0\u6743\u540e\u5f00\u673a\u542f\u52a8\u672a\u7533\u8bf7\u7ba1\u7406\u5458\u6743\u9650\u7684\u95ee\u9898",
             "",
