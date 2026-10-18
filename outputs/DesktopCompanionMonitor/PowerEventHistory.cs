@@ -8,41 +8,29 @@ internal sealed class PowerEventHistory
 {
     private readonly IReadOnlyList<Interval> _powered;
     private readonly IReadOnlyList<Interval> _sleep;
+    private readonly PowerCarry? _carry;
 
-    public PowerEventHistory(IReadOnlyList<Interval> powered, IReadOnlyList<Interval> sleep)
+    public PowerEventHistory(
+        IReadOnlyList<Interval> powered,
+        IReadOnlyList<Interval> sleep,
+        PowerCarry? carry = null)
     {
         _powered = powered;
         _sleep = sleep;
+        _carry = carry;
     }
 
-    public static PowerEventHistory Load(IReadOnlyList<Interval>? recordedSessions = null)
+    public static PowerEventHistory Load(
+        IReadOnlyList<Interval>? recordedSessions = null,
+        PowerCarry? carry = null)
     {
-        var boot = new List<(DateTimeOffset Time, int Id)>();
         var power = new List<(DateTimeOffset Time, int Id)>();
-        if (!Read("Microsoft-Windows-Kernel-General", "12,13", boot) ||
-            !Read("Microsoft-Windows-Kernel-Power", "42,107,506,507", power))
+        if (!Read("Microsoft-Windows-Kernel-Power", "42,107,506,507", power))
         {
             throw new InvalidOperationException("系统电源事件日志读取失败");
         }
 
-        List<DateTimeOffset> boots = boot.Where(e => e.Id == 12).Select(e => e.Time).OrderBy(t => t).ToList();
-        List<DateTimeOffset> shutdowns = boot.Where(e => e.Id == 13).Select(e => e.Time).OrderBy(t => t).ToList();
         var powered = recordedSessions?.ToList() ?? [];
-        DateTimeOffset now = DateTimeOffset.UtcNow;
-        for (int i = 0; i < boots.Count; i++)
-        {
-            DateTimeOffset bootTime = boots[i];
-            DateTimeOffset nextBoot = i + 1 < boots.Count ? boots[i + 1] : DateTimeOffset.MaxValue;
-            DateTimeOffset? shutdown = shutdowns.FirstOrDefault(value => value > bootTime && value < nextBoot);
-            if (shutdown is { } shutdownTime && shutdownTime > bootTime && shutdownTime < now)
-            {
-                powered.Add(new Interval(bootTime, shutdownTime));
-            }
-            else if (i == boots.Count - 1 && bootTime <= now)
-            {
-                powered.Add(new Interval(bootTime, DateTimeOffset.MaxValue));
-            }
-        }
 
         var sleep = new List<Interval>();
         DateTimeOffset? enter = null;
@@ -61,24 +49,7 @@ internal sealed class PowerEventHistory
             }
         }
 
-        DateTimeOffset? latestResume = power
-            .Where(e => (e.Id is 107 or 507) && e.Time <= now)
-            .Select(e => (DateTimeOffset?)e.Time)
-            .OrderByDescending(t => t)
-            .FirstOrDefault();
-        if (latestResume is { } resume)
-        {
-            for (int i = 0; i < powered.Count; i++)
-            {
-                Interval interval = powered[i];
-                if (interval.Start < resume && interval.End >= resume)
-                {
-                    powered[i] = interval with { Start = resume };
-                }
-            }
-        }
-
-        return new PowerEventHistory(Merge(powered), sleep);
+        return new PowerEventHistory(Merge(powered), sleep, carry);
     }
 
     public MonitorStats GetStats(DateTimeOffset windowStart, DateTimeOffset windowEnd)
@@ -96,7 +67,20 @@ internal sealed class PowerEventHistory
                 if (end > start) sleep += (long)(end - start).TotalSeconds;
             }
         }
-        return new MonitorStats(TimeSpan.FromSeconds(powered), TimeSpan.FromSeconds(Math.Max(0, powered - sleep)));
+        long awake = Math.Max(0, powered - sleep);
+        if (_carry is { } carry)
+        {
+            DateTimeOffset start = carry.StartUtc > windowStart ? carry.StartUtc : windowStart;
+            DateTimeOffset end = carry.EndUtc < windowEnd ? carry.EndUtc : windowEnd;
+            double carryDuration = (carry.EndUtc - carry.StartUtc).TotalSeconds;
+            if (end > start && carryDuration > 0)
+            {
+                double fraction = (end - start).TotalSeconds / carryDuration;
+                powered += (long)Math.Round(carry.Powered.TotalSeconds * fraction);
+                awake += (long)Math.Round(carry.Awake.TotalSeconds * fraction);
+            }
+        }
+        return new MonitorStats(TimeSpan.FromSeconds(powered), TimeSpan.FromSeconds(Math.Min(powered, awake)));
     }
 
     private static bool Read(string provider, string ids, List<(DateTimeOffset, int)> output)

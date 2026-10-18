@@ -90,11 +90,42 @@ internal sealed class MonitorEngine : IDisposable
         LoadLongestUptime();
         _inputStore = new InputUsageStore(_daily.DataDirectory);
         _inputCounter = new InputUsageCounter(_inputStore);
-        _powerSessions = new PowerSessionStore(_daily.DataDirectory);
+        _powerSessions = new PowerSessionStore(_daily.DataDirectory, CreatePowerCarry(DateTime.Now.Date));
         _bucketStart = Truncate(DateTimeOffset.UtcNow);
         _bucketEnd = _bucketStart.AddSeconds(5);
         _timer = new Timer { Interval = 1000 };
         _timer.Tick += OnTick;
+    }
+
+    private PowerCarry? CreatePowerCarry(DateTime date)
+    {
+        DailyRecord? record = _daily.Load(date);
+        if (record is null)
+        {
+            return null;
+        }
+
+        long active = Math.Max(0, (long)record.Active.TotalSeconds);
+        long awake = Math.Max(active, (long)record.Awake.TotalSeconds);
+        long powered = Math.Max(awake, (long)record.Powered.TotalSeconds);
+        DateTimeOffset localStart = new(
+            date.Year,
+            date.Month,
+            date.Day,
+            0,
+            0,
+            0,
+            TimeZoneInfo.Local.GetUtcOffset(date));
+        DateTimeOffset end = record.UpdatedAtUtc > DateTimeOffset.UtcNow
+            ? DateTimeOffset.UtcNow
+            : record.UpdatedAtUtc;
+        return end <= localStart.ToUniversalTime()
+            ? null
+            : new PowerCarry(
+                localStart.ToUniversalTime(),
+                end,
+                TimeSpan.FromSeconds(powered),
+                TimeSpan.FromSeconds(awake));
     }
 
     private void RestoreDailyAccumulators(DateTime date)
@@ -471,7 +502,7 @@ public IReadOnlyDictionary<string, double> GetDailyLeaderboardValues(DateTime da
                 await Task.Delay(delay).ConfigureAwait(false);
             }
             PowerEventHistory history = await Task.Run(
-                () => PowerEventHistory.Load(_powerSessions.GetIntervals())).ConfigureAwait(false);
+                () => PowerEventHistory.Load(_powerSessions.GetIntervals(), _powerSessions.GetCarry())).ConfigureAwait(false);
             SynchronizationContext? context = _uiContext;
             if (_disposed || context is null)
             {
