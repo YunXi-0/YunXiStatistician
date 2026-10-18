@@ -9,9 +9,14 @@ internal static class AdminPrompt
 
     public static bool ShowIfNeeded()
     {
-        if (IsAdministrator() || IsSuppressed())
+        if (IsAdministrator())
         {
             return true;
+        }
+        if (IsSuppressed())
+        {
+            RestartElevated();
+            return false;
         }
 
         using Form dialog = new()
@@ -55,15 +60,21 @@ internal static class AdminPrompt
         dialog.CancelButton = continueButton;
 
         DialogResult result = dialog.ShowDialog();
-        if (suppress.Checked)
-        {
-            SaveSuppressed();
-        }
         if (result != DialogResult.Yes)
         {
             return true;
         }
+        if (suppress.Checked)
+        {
+            SaveSuppressed();
+        }
 
+        RestartElevated();
+        return false;
+    }
+
+    private static void RestartElevated()
+    {
         try
         {
             Process.Start(new ProcessStartInfo
@@ -77,7 +88,6 @@ internal static class AdminPrompt
         {
             MessageBox.Show($"提权启动失败：{ex.Message}", "云曦PC统计", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
-        return false;
     }
 
     private static bool IsAdministrator()
